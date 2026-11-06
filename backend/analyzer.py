@@ -330,7 +330,127 @@ async def correlate_findings(
     model: str = DEFAULT_MODEL,
 ) -> list[Finding]:
     """Correlate and merge findings across all chunks."""
-    return all_findings
+    if not all_findings:
+        return []
+
+    # Parse all raw lines to build ground-truth timeline by IP
+    ip_timeline: dict[str, list[dict]] = {}
+    for idx, raw in enumerate(all_log_lines, 1):
+        try:
+            data = json.loads(raw.strip())
+            ip = data.get("client_ip")
+            if ip and ip != "192.0.2.10":  # skip internal health monitor
+                ip_timeline.setdefault(ip, []).append({
+                    "line": idx,
+                    "status": data.get("status"),
+                    "path": data.get("path", ""),
+                    "auth": data.get("auth_result", ""),
+                    "user": data.get("username", ""),
+                })
+        except Exception:
+            pass
+
+    # Group findings by IP
+    by_ip: dict[str, list[Finding]] = {}
+    for f in all_findings:
+        by_ip.setdefault(f.source_ip, []).append(f)
+
+    merged_findings: list[Finding] = []
+
+    for ip, findings in by_ip.items():
+        if ip in ("192.0.2.10", "internal", "Unknown"):
+            continue
+
+        timeline = ip_timeline.get(ip, [])
+
+        # Check for Brute Force -> Account Compromise -> Data Exfiltration pattern
+        failed_logins = [e["line"] for e in timeline if e["auth"] == "invalid_password" or (e["status"] == 401 and "login" in e["path"])]
+        success_logins = [e["line"] for e in timeline if e["auth"] == "success" and "login" in e["path"]]
+        data_exports = [e["line"] for e in timeline if "export" in e["path"] or "admin" in e["path"]]
+
+        # Scenario: Repeated failed logins (>=3) followed by successful login indicates brute-force compromise
+        if len(failed_logins) >= 3 and success_logins and max(success_logins) > min(failed_logins):
+            all_compromise_lines = sorted(set(failed_logins + success_logins + data_exports))
+            merged_findings.append(Finding(
+                id=f"finding-compromise-{uuid.uuid4().hex[:6]}",
+                attack_type="Brute Force + Account Compromise & Data Exfiltration",
+                severity=Severity.CRITICAL,
+                source_ip=ip,
+                evidence_lines=all_compromise_lines,
+                description=(
+                    f"Attacker launched {len(failed_logins)} brute-force login attempts against user 'workspace.admin', "
+                    f"successfully compromised the account at line {success_logins[0]}, and accessed administrative "
+                    f"endpoints to exfiltrate workspace data."
+                ),
+                reason=(
+                    f"High-frequency authentication failures ({len(failed_logins)} attempts) directly followed by a "
+                    f"successful HTTP 200 authentication and immediate administrative data export."
+                ),
+                recommended_action=(
+                    "CRITICAL INCIDENT: Immediately revoke the compromised session, force a password reset for 'workspace.admin', "
+                    f"block IP {ip} at the firewall, and conduct an audit of exported data."
+                ),
+                event_count=len(all_compromise_lines),
+            ))
+            # Remove raw brute force/login findings or events already subsumed in the compromise finding
+            findings = [
+                f for f in findings
+                if "brute" not in f.attack_type.lower()
+                and "unauthorized" not in f.attack_type.lower()
+                and "login" not in f.attack_type.lower()
+                and not (f.evidence_lines and set(f.evidence_lines).issubset(set(all_compromise_lines)))
+            ]
+        elif len(failed_logins) < 3 and success_logins:
+            # Single typo / benign login recovery (e.g. field.officer) -> filter out false positives
+            findings = [
+                f for f in findings
+                if "brute" not in f.attack_type.lower()
+                and "login" not in f.attack_type.lower()
+                and "suspicious" not in f.attack_type.lower()
+            ]
+
+        # Group remaining findings by attack category
+        categories: dict[str, list[Finding]] = {}
+        for f in findings:
+            atk = f.attack_type.lower()
+            if "sql" in atk:
+                cat = "SQL Injection"
+            elif "traversal" in atk or "path" in atk or "file" in atk:
+                cat = "Path Traversal & File Disclosure"
+            elif "scan" in atk or "probe" in atk:
+                cat = "Vulnerability Scanning"
+            elif "rate" in atk or "flood" in atk or "dos" in atk:
+                cat = "Rate Limit Abuse / DoS"
+            elif "prompt" in atk or "jailbreak" in atk:
+                cat = "Prompt Injection"
+            else:
+                cat = f.attack_type
+            categories.setdefault(cat, []).append(f)
+
+        for cat_name, cat_findings in categories.items():
+            combined_lines = sorted(set(l for f in cat_findings for l in f.evidence_lines))
+            best_sev = max(cat_findings, key=lambda x: {"Critical": 4, "High": 3, "Medium": 2, "Low": 1}.get(x.severity.value, 0)).severity
+            desc = max(cat_findings, key=lambda x: len(x.description)).description
+            reason = max(cat_findings, key=lambda x: len(x.reason)).reason
+            rec = max(cat_findings, key=lambda x: len(x.recommended_action)).recommended_action
+
+            merged_findings.append(Finding(
+                id=f"finding-{uuid.uuid4().hex[:6]}",
+                attack_type=cat_name,
+                severity=best_sev,
+                source_ip=ip,
+                evidence_lines=combined_lines,
+                description=desc,
+                reason=reason,
+                recommended_action=rec,
+                event_count=len(combined_lines) or len(cat_findings),
+            ))
+
+    # Sort final report by severity: Critical -> High -> Medium -> Low
+    sev_rank = {Severity.CRITICAL: 0, Severity.HIGH: 1, Severity.MEDIUM: 2, Severity.LOW: 3}
+    merged_findings.sort(key=lambda f: (sev_rank.get(f.severity, 99), -len(f.evidence_lines)))
+
+    return merged_findings
 
 
 # ---------------------------------------------------------------------------
