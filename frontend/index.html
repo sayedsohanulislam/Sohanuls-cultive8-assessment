@@ -1,0 +1,905 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cultive8 — Local AI Security Log Analyzer</title>
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        :root {
+            --bg: #0b1120;
+            --bg-card: #151f32;
+            --bg-card-hover: #1c2a44;
+            --border: #243552;
+            --text: #e2e8f0;
+            --text-muted: #94a3b8;
+            --accent: #3b82f6;
+            --accent-hover: #60a5fa;
+            --critical: #ef4444;
+            --high: #f97316;
+            --medium: #eab308;
+            --low: #3b82f6;
+            --success: #22c55e;
+            --radius: 12px;
+            --shadow: 0 8px 30px rgba(0,0,0,0.35);
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            line-height: 1.6;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #0b1120 0%, #17243c 100%);
+            border-bottom: 1px solid var(--border);
+            padding: 1.25rem 2rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .header-left { display: flex; align-items: center; gap: 0.75rem; }
+        .header h1 {
+            font-size: 1.35rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, #60a5fa 0%, #c084fc 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .header .badge-tag {
+            font-size: 0.75rem;
+            background: rgba(59,130,246,0.15);
+            color: #93c5fd;
+            border: 1px solid rgba(59,130,246,0.3);
+            border-radius: 9999px;
+            padding: 0.2rem 0.6rem;
+            font-weight: 600;
+        }
+        .header .brand {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            font-weight: 600;
+        }
+
+        .container { max-width: 1240px; margin: 0 auto; padding: 2rem; }
+
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 1.75rem;
+            margin-bottom: 1.75rem;
+            box-shadow: var(--shadow);
+            transition: all 0.2s ease;
+        }
+        .card h2 {
+            font-size: 1.15rem;
+            margin-bottom: 1rem;
+            color: #93c5fd;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        /* Upload Zone */
+        .upload-zone {
+            border: 2px dashed var(--border);
+            border-radius: var(--radius);
+            padding: 3rem 2rem;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.25s ease;
+            background: rgba(15,23,42,0.5);
+        }
+        .upload-zone:hover, .upload-zone.dragover {
+            border-color: var(--accent);
+            background: rgba(59,130,246,0.06);
+            transform: translateY(-2px);
+        }
+        .upload-zone.has-file {
+            border-color: var(--success);
+            background: rgba(34,197,94,0.06);
+        }
+        .upload-zone .icon { font-size: 3.25rem; margin-bottom: 0.75rem; }
+        .upload-zone .label { color: var(--text-muted); font-size: 0.95rem; }
+        .upload-zone .filename { color: var(--success); font-weight: 600; margin-top: 0.6rem; font-size: 1rem; }
+        .upload-zone input[type="file"] { display: none; }
+
+        /* Controls */
+        .controls-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            margin-top: 1.25rem;
+            flex-wrap: wrap;
+        }
+        .model-select-group {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+        }
+        .model-select-group label {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            font-weight: 600;
+        }
+        .model-select {
+            background: var(--bg);
+            color: var(--text);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 0.5rem 0.85rem;
+            font-size: 0.85rem;
+            outline: none;
+            cursor: pointer;
+        }
+        .model-select:focus { border-color: var(--accent); }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.65rem 1.35rem;
+            border: none;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, #2563eb 0%, #3b82f6 100%);
+            color: white;
+            box-shadow: 0 2px 10px rgba(37,99,235,0.3);
+        }
+        .btn-primary:hover:not(:disabled) {
+            background: linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%);
+            transform: translateY(-1px);
+        }
+        .btn-primary:disabled {
+            opacity: 0.45;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+        .btn-secondary {
+            background: var(--bg-card-hover);
+            color: var(--text);
+            border: 1px solid var(--border);
+        }
+        .btn-secondary:hover:not(:disabled) { background: var(--border); transform: translateY(-1px); }
+
+        /* Progress Section */
+        .progress-section { display: none; }
+        .progress-section.visible { display: block; }
+        .progress-bar-container {
+            background: #0f172a;
+            border-radius: 9999px;
+            height: 20px;
+            overflow: hidden;
+            margin: 1rem 0;
+            border: 1px solid var(--border);
+        }
+        .progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #3b82f6 0%, #8b5cf6 50%, #ec4899 100%);
+            border-radius: 9999px;
+            transition: width 0.4s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.75rem;
+            font-weight: 700;
+            color: white;
+            min-width: 32px;
+        }
+        .progress-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 1rem;
+            margin: 1rem 0;
+        }
+        .stat-box {
+            background: rgba(11,17,32,0.7);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 0.75rem;
+            text-align: center;
+        }
+        .stat-box .stat-value {
+            font-size: 1.35rem;
+            font-weight: 800;
+            color: #60a5fa;
+        }
+        .stat-box .stat-label {
+            font-size: 0.72rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            margin-top: 0.2rem;
+        }
+
+        .log-console {
+            background: #060b14;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1rem;
+            max-height: 220px;
+            overflow-y: auto;
+            font-family: 'Cascadia Code', 'Fira Code', Consolas, monospace;
+            font-size: 0.8rem;
+            line-height: 1.7;
+        }
+        .log-console .log-line { color: var(--text-muted); }
+        .log-console .log-line.finding { color: #fde047; font-weight: 600; }
+        .log-console .log-line.error { color: #f87171; }
+        .log-console .log-line.success { color: #4ade80; }
+
+        /* Report Section */
+        .report-section { display: none; }
+        .report-section.visible { display: block; }
+
+        .summary-cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+        .summary-card {
+            background: rgba(11,17,32,0.8);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 1.25rem 1rem;
+            text-align: center;
+            border-top: 4px solid var(--accent);
+        }
+        .summary-card.critical { border-top-color: var(--critical); }
+        .summary-card.high { border-top-color: var(--high); }
+        .summary-card.medium { border-top-color: var(--medium); }
+        .summary-card.low { border-top-color: var(--low); }
+        .summary-card .count { font-size: 2.1rem; font-weight: 800; }
+        .summary-card.critical .count { color: var(--critical); }
+        .summary-card.high .count { color: var(--high); }
+        .summary-card.medium .count { color: var(--medium); }
+        .summary-card.low .count { color: var(--low); }
+        .summary-card .label {
+            font-size: 0.72rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            margin-top: 0.25rem;
+        }
+
+        /* Timeline */
+        .timeline-container {
+            background: rgba(11,17,32,0.6);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 1.25rem;
+            margin-bottom: 1.5rem;
+        }
+        .timeline-title {
+            font-size: 0.9rem;
+            font-weight: 700;
+            color: #93c5fd;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .timeline-flow {
+            display: flex;
+            gap: 0.75rem;
+            overflow-x: auto;
+            padding-bottom: 0.5rem;
+        }
+        .timeline-step {
+            flex: 1;
+            min-width: 170px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 0.75rem;
+            position: relative;
+        }
+        .timeline-step.critical { border-left: 3px solid var(--critical); }
+        .timeline-step.high { border-left: 3px solid var(--high); }
+        .timeline-step.medium { border-left: 3px solid var(--medium); }
+        .timeline-step .time-tag { font-size: 0.7rem; color: var(--text-muted); }
+        .timeline-step .step-title { font-size: 0.82rem; font-weight: 700; color: var(--text); margin: 0.2rem 0; }
+        .timeline-step .step-ip { font-size: 0.75rem; font-family: monospace; color: #93c5fd; }
+
+        /* Severity badges */
+        .badge {
+            display: inline-block;
+            padding: 0.2rem 0.6rem;
+            border-radius: 4px;
+            font-size: 0.72rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .badge-critical { background: rgba(239,68,68,0.2); color: #fca5a5; border: 1px solid rgba(239,68,68,0.4); }
+        .badge-high { background: rgba(249,115,22,0.2); color: #fdba74; border: 1px solid rgba(249,115,22,0.4); }
+        .badge-medium { background: rgba(234,179,8,0.2); color: #fde047; border: 1px solid rgba(234,179,8,0.4); }
+        .badge-low { background: rgba(59,130,246,0.2); color: #93c5fd; border: 1px solid rgba(59,130,246,0.4); }
+
+        /* Findings table */
+        .findings-table { width: 100%; border-collapse: collapse; }
+        .findings-table th {
+            text-align: left;
+            padding: 0.75rem 1rem;
+            border-bottom: 2px solid var(--border);
+            color: var(--text-muted);
+            font-size: 0.78rem;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+        }
+        .findings-table td {
+            padding: 0.85rem 1rem;
+            border-bottom: 1px solid var(--border);
+            vertical-align: middle;
+            font-size: 0.9rem;
+        }
+        .findings-table tr.finding-row { cursor: pointer; transition: background 0.15s ease; }
+        .findings-table tr.finding-row:hover td { background: var(--bg-card-hover); }
+
+        .finding-details {
+            display: none;
+            background: #090f1a;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1.25rem;
+            margin: 0.5rem 0;
+            line-height: 1.6;
+        }
+        .finding-details.visible { display: block; animation: fadeIn 0.2s ease; }
+        .finding-details dt {
+            font-size: 0.75rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            color: #93c5fd;
+            margin-top: 0.6rem;
+        }
+        .finding-details dt:first-child { margin-top: 0; }
+        .finding-details dd {
+            color: var(--text);
+            margin-left: 0;
+            margin-bottom: 0.6rem;
+            font-size: 0.9rem;
+        }
+        .evidence-tag {
+            display: inline-block;
+            background: rgba(234,179,8,0.15);
+            color: #fde047;
+            padding: 0.15rem 0.45rem;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 0.8rem;
+            margin-right: 0.3rem;
+            margin-bottom: 0.2rem;
+        }
+
+        .system-info {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+        }
+        .sys-item {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            background: rgba(11,17,32,0.6);
+            padding: 0.65rem 0.9rem;
+            border-radius: 6px;
+            border: 1px solid var(--border);
+        }
+        .sys-item strong { color: var(--text); }
+
+        .footer {
+            text-align: center;
+            padding: 2rem;
+            color: var(--text-muted);
+            font-size: 0.8rem;
+            border-top: 1px solid var(--border);
+            margin-top: 3rem;
+        }
+
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.6; } }
+        .analyzing .progress-bar { animation: pulse 1.8s infinite; }
+
+        @media (max-width: 768px) {
+            .container { padding: 1rem; }
+            .header { padding: 1rem; }
+            .controls-row { flex-direction: column; align-items: stretch; }
+        }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <div class="header-left">
+            <h1>🛡️ AI Security Log Analyzer</h1>
+            <span class="badge-tag">Local LLM Offline</span>
+        </div>
+        <div class="brand">Cultive8 Assessment</div>
+    </header>
+
+    <div class="container">
+        <!-- Upload Section -->
+        <div class="card" id="uploadCard">
+            <h2>📁 Select or Upload Server Log</h2>
+            <div class="upload-zone" id="uploadZone">
+                <div class="icon">📜</div>
+                <div class="label">Drag & drop your <strong>.log</strong> or <strong>.txt</strong> file here, or click to browse</div>
+                <div class="filename" id="fileInfo" style="display:none"></div>
+                <input type="file" id="fileInput" accept=".log,.txt">
+            </div>
+
+            <div class="controls-row">
+                <div class="model-select-group">
+                    <label for="modelSelect">Local AI Model:</label>
+                    <select id="modelSelect" class="model-select">
+                        <option value="qwen2.5:1.5b" selected>Qwen 2.5 1.5B (Recommended)</option>
+                        <option value="qwen2.5:0.5b">Qwen 2.5 0.5B (Lightweight)</option>
+                    </select>
+                    <span id="ollamaStatusBadge" style="font-size:0.75rem;padding:0.25rem 0.55rem;border-radius:4px;background:rgba(34,197,94,0.15);color:var(--success);font-weight:600;">● Ollama Online</span>
+                </div>
+
+                <div style="display:flex;gap:0.75rem;flex-wrap:wrap;">
+                    <button class="btn btn-secondary" id="sampleBtn">
+                        ⚡ Load Sample Log
+                    </button>
+                    <button class="btn btn-primary" id="analyzeBtn" disabled>
+                        🔍 Start Analysis
+                    </button>
+                    <button class="btn btn-secondary" id="resetBtn" style="display:none">
+                        🔄 Reset
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Progress Section -->
+        <div class="card progress-section" id="progressSection">
+            <h2>⚙️ Pipeline Execution</h2>
+            <div id="stepLabel" style="color:var(--text-muted);font-size:0.9rem;margin-bottom:0.5rem">Ready to start...</div>
+            <div class="progress-bar-container">
+                <div class="progress-bar" id="progressBar" style="width:0%">0%</div>
+            </div>
+            <div class="progress-stats">
+                <div class="stat-box">
+                    <div class="stat-value" id="statChunks">0/0</div>
+                    <div class="stat-label">Chunks Processed</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-value" id="statFindings">0</div>
+                    <div class="stat-label">Threats Flagged</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-value" id="statTime">0s</div>
+                    <div class="stat-label">Elapsed Time</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-value" id="statRam">-</div>
+                    <div class="stat-label">App Memory</div>
+                </div>
+            </div>
+            <div class="log-console" id="logConsole"></div>
+        </div>
+
+        <!-- Report Section -->
+        <div class="card report-section" id="reportSection">
+            <h2>📊 Consolidated Security Findings</h2>
+
+            <div class="summary-cards" id="summaryCards"></div>
+
+            <!-- Attack Sequence Timeline -->
+            <div class="timeline-container" id="timelineContainer">
+                <div class="timeline-title">⏱️ Attack Sequence Kill-Chain</div>
+                <div class="timeline-flow" id="timelineFlow"></div>
+            </div>
+
+            <div style="display:flex;justify-content:flex-end;margin-bottom:1rem;">
+                <button class="btn btn-secondary" id="downloadBtn">📥 Export JSON Report</button>
+            </div>
+
+            <div style="overflow-x:auto">
+                <table class="findings-table">
+                    <thead>
+                        <tr>
+                            <th style="width:40px">#</th>
+                            <th style="width:110px">Severity</th>
+                            <th>Attack Classification</th>
+                            <th>Attacker IP</th>
+                            <th>Evidence Lines</th>
+                            <th>Key Observation</th>
+                        </tr>
+                    </thead>
+                    <tbody id="findingsBody"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- System Information -->
+        <div class="card" id="systemCard" style="display:none">
+            <h2>🖥️ Runtime & Resource Utilization</h2>
+            <div class="system-info" id="systemInfo"></div>
+        </div>
+    </div>
+
+    <footer class="footer">
+        Cultive8 Developer Assessment &middot; Local AI Security Log Analyzer &middot; Zero Cloud API Transmission
+    </footer>
+
+    <script>
+    (function() {
+        const uploadZone = document.getElementById('uploadZone');
+        const fileInput = document.getElementById('fileInput');
+        const fileInfo = document.getElementById('fileInfo');
+        const sampleBtn = document.getElementById('sampleBtn');
+        const analyzeBtn = document.getElementById('analyzeBtn');
+        const resetBtn = document.getElementById('resetBtn');
+        const modelSelect = document.getElementById('modelSelect');
+        const ollamaStatusBadge = document.getElementById('ollamaStatusBadge');
+
+        const progressSection = document.getElementById('progressSection');
+        const stepLabel = document.getElementById('stepLabel');
+        const progressBar = document.getElementById('progressBar');
+        const statChunks = document.getElementById('statChunks');
+        const statFindings = document.getElementById('statFindings');
+        const statTime = document.getElementById('statTime');
+        const statRam = document.getElementById('statRam');
+        const logConsole = document.getElementById('logConsole');
+
+        const reportSection = document.getElementById('reportSection');
+        const summaryCards = document.getElementById('summaryCards');
+        const timelineFlow = document.getElementById('timelineFlow');
+        const findingsBody = document.getElementById('findingsBody');
+        const downloadBtn = document.getElementById('downloadBtn');
+        const systemCard = document.getElementById('systemCard');
+        const systemInfo = document.getElementById('systemInfo');
+
+        let currentJobId = null;
+        let pollTimer = null;
+        let selectedFile = null;
+        let reportData = null;
+        let lastLogCount = 0;
+
+        // --- File Selection & Drag-and-Drop ---
+        uploadZone.addEventListener('click', () => fileInput.click());
+        uploadZone.addEventListener('dragover', (e) => { e.preventDefault(); uploadZone.classList.add('dragover'); });
+        uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('dragover'));
+        uploadZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadZone.classList.remove('dragover');
+            if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+        });
+        fileInput.addEventListener('change', () => { if (fileInput.files.length) handleFile(fileInput.files[0]); });
+
+        function handleFile(file) {
+            const ext = file.name.split('.').pop().toLowerCase();
+            if (!['log', 'txt'].includes(ext)) {
+                alert('Please upload a valid .log or .txt file');
+                return;
+            }
+            selectedFile = file;
+            uploadZone.classList.add('has-file');
+            fileInfo.style.display = 'block';
+            fileInfo.textContent = `✅ ${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
+            analyzeBtn.disabled = false;
+        }
+
+        // --- Sample Log Quick-Load ---
+        sampleBtn.addEventListener('click', async () => {
+            sampleBtn.disabled = true;
+            sampleBtn.textContent = '⏳ Loading...';
+            try {
+                const resp = await fetch('/api/load-sample', { method: 'POST' });
+                if (!resp.ok) throw new Error('Sample log file not found on server');
+                const data = await resp.json();
+                currentJobId = data.job_id;
+                selectedFile = null; // loaded from server
+
+                uploadZone.classList.add('has-file');
+                fileInfo.style.display = 'block';
+                fileInfo.textContent = `⚡ Sample Loaded: ${data.filename} (${data.total_lines} lines, ${(data.file_size/1024).toFixed(1)} KB)`;
+                analyzeBtn.disabled = false;
+            } catch(e) {
+                alert('Error loading sample log: ' + e.message);
+            } finally {
+                sampleBtn.disabled = false;
+                sampleBtn.textContent = '⚡ Load Sample Log';
+            }
+        });
+
+        // --- Analysis Execution ---
+        analyzeBtn.addEventListener('click', async () => {
+            analyzeBtn.disabled = true;
+            sampleBtn.disabled = true;
+            lastLogCount = 0;
+
+            const selectedModel = modelSelect.value;
+
+            try {
+                // If a file was picked manually, upload it first
+                if (selectedFile) {
+                    const formData = new FormData();
+                    formData.append('file', selectedFile);
+                    const uploadResp = await fetch('/api/upload', { method: 'POST', body: formData });
+                    if (!uploadResp.ok) {
+                        const err = await uploadResp.json();
+                        throw new Error(err.detail || 'Upload failed');
+                    }
+                    const uploadData = await uploadResp.json();
+                    currentJobId = uploadData.job_id;
+                }
+
+                if (!currentJobId) throw new Error('No log file selected');
+
+                progressSection.classList.add('visible');
+                progressSection.classList.add('analyzing');
+                reportSection.classList.remove('visible');
+                logConsole.innerHTML = '';
+                addLogLine(`Initiating pipeline with model: ${selectedModel}`, 'success');
+
+                const analyzeResp = await fetch(`/api/analyze/${currentJobId}?model=${encodeURIComponent(selectedModel)}`, { method: 'POST' });
+                if (!analyzeResp.ok) throw new Error('Failed to start analysis');
+
+                startPolling();
+
+            } catch (err) {
+                alert('Error: ' + err.message);
+                analyzeBtn.disabled = false;
+                sampleBtn.disabled = false;
+            }
+        });
+
+        function startPolling() {
+            pollTimer = setInterval(async () => {
+                try {
+                    const resp = await fetch(`/api/status/${currentJobId}`);
+                    if (!resp.ok) return;
+                    const data = await resp.json();
+                    updateProgress(data);
+
+                    if (data.status === 'complete') {
+                        clearInterval(pollTimer);
+                        progressSection.classList.remove('analyzing');
+                        await loadReport();
+                    } else if (data.status === 'error') {
+                        clearInterval(pollTimer);
+                        progressSection.classList.remove('analyzing');
+                        addLogLine(`Error: ${data.error}`, 'error');
+                        analyzeBtn.disabled = false;
+                        sampleBtn.disabled = false;
+                    }
+                } catch (e) { }
+            }, 1800);
+        }
+
+        function updateProgress(data) {
+            const pct = Math.round(data.progress_percent);
+            progressBar.style.width = pct + '%';
+            progressBar.textContent = pct + '%';
+
+            const statusMap = {
+                'chunking': '📐 Partitioning log into token-bounded chunks...',
+                'analyzing': `🔍 Analyzing chunk ${data.current_chunk} of ${data.total_chunks}...`,
+                'correlating': '🔗 Correlating and linking security events across chunks...',
+                'complete': '✅ Security analysis complete!',
+                'error': '❌ Analysis stopped on error',
+            };
+            stepLabel.textContent = statusMap[data.status] || data.status;
+            statChunks.textContent = `${data.chunks_completed}/${data.total_chunks}`;
+            statFindings.textContent = data.findings_so_far;
+            statTime.textContent = Math.round(data.elapsed_seconds) + 's';
+
+            if (data.system) {
+                statRam.textContent = data.system.ram_used_mb + ' MB';
+            }
+
+            if (data.log_messages && data.log_messages.length > lastLogCount) {
+                const newLines = data.log_messages.slice(lastLogCount);
+                newLines.forEach(msg => {
+                    let cls = '';
+                    if (msg.includes('Identified') || msg.includes('finding') || msg.includes('[Critical]') || msg.includes('[High]')) cls = 'finding';
+                    else if (msg.includes('❌') || msg.includes('⚠') || msg.includes('failed')) cls = 'error';
+                    else if (msg.includes('✅') || msg.includes('completed')) cls = 'success';
+                    addLogLine(msg, cls);
+                });
+                lastLogCount = data.log_messages.length;
+            }
+        }
+
+        function addLogLine(text, cls = '') {
+            const div = document.createElement('div');
+            div.className = 'log-line' + (cls ? ' ' + cls : '');
+            div.textContent = `[${new Date().toLocaleTimeString()}] ${text}`;
+            logConsole.appendChild(div);
+            logConsole.scrollTop = logConsole.scrollHeight;
+        }
+
+        // --- Report Rendering ---
+        async function loadReport() {
+            try {
+                const resp = await fetch(`/api/report/${currentJobId}`);
+                if (!resp.ok) throw new Error('Failed to load final report');
+                reportData = await resp.json();
+                renderReport(reportData);
+                reportSection.classList.add('visible');
+                resetBtn.style.display = 'inline-flex';
+                analyzeBtn.disabled = false;
+                sampleBtn.disabled = false;
+
+                systemCard.style.display = 'block';
+                systemInfo.innerHTML = `
+                    <div class="sys-item"><strong>Model:</strong> ${reportData.model_name}</div>
+                    <div class="sys-item"><strong>Model Calls:</strong> ${reportData.total_model_calls}</div>
+                    <div class="sys-item"><strong>Tokens Consumed:</strong> ${reportData.total_tokens_used.toLocaleString()}</div>
+                    <div class="sys-item"><strong>Total Time:</strong> ${reportData.processing_time_seconds.toFixed(1)}s</div>
+                    <div class="sys-item"><strong>Chunks:</strong> ${reportData.total_chunks}</div>
+                    <div class="sys-item"><strong>Total Lines:</strong> ${reportData.total_lines}</div>
+                `;
+            } catch (e) {
+                addLogLine('Failed to load report: ' + e.message, 'error');
+            }
+        }
+
+        function renderReport(report) {
+            const sc = report.severity_counts || {};
+            const total = report.total_findings;
+
+            summaryCards.innerHTML = `
+                <div class="summary-card">
+                    <div class="count" style="color:var(--text)">${total}</div>
+                    <div class="label">Total Findings</div>
+                </div>
+                <div class="summary-card critical">
+                    <div class="count">${sc['Critical'] || 0}</div>
+                    <div class="label">Critical</div>
+                </div>
+                <div class="summary-card high">
+                    <div class="count">${sc['High'] || 0}</div>
+                    <div class="label">High</div>
+                </div>
+                <div class="summary-card medium">
+                    <div class="count">${sc['Medium'] || 0}</div>
+                    <div class="label">Medium</div>
+                </div>
+                <div class="summary-card low">
+                    <div class="count">${sc['Low'] || 0}</div>
+                    <div class="label">Low</div>
+                </div>
+            `;
+
+            // Timeline flow
+            timelineFlow.innerHTML = '';
+            const findings = report.findings || [];
+            findings.forEach((f) => {
+                const step = document.createElement('div');
+                const sevClass = f.severity.toLowerCase();
+                step.className = `timeline-step ${sevClass}`;
+                step.innerHTML = `
+                    <div class="time-tag">Lines ${f.evidence_lines ? f.evidence_lines.slice(0, 3).join(', ') + (f.evidence_lines.length > 3 ? '...' : '') : ''}</div>
+                    <div class="step-title">${escHtml(f.attack_type)}</div>
+                    <div class="step-ip">${escHtml(f.source_ip)}</div>
+                `;
+                timelineFlow.appendChild(step);
+            });
+
+            // Findings table
+            findingsBody.innerHTML = '';
+            findings.forEach((f, idx) => {
+                const sevClass = f.severity.toLowerCase();
+                const tr = document.createElement('tr');
+                tr.className = 'finding-row';
+                const linesStr = (f.evidence_lines || []).map(l => `<span class="evidence-tag">L${l}</span>`).join('');
+                
+                tr.innerHTML = `
+                    <td style="color:var(--text-muted);font-weight:700">${idx + 1}</td>
+                    <td><span class="badge badge-${sevClass}">${f.severity}</span></td>
+                    <td><strong>${escHtml(f.attack_type)}</strong></td>
+                    <td><code style="color:#93c5fd">${escHtml(f.source_ip)}</code></td>
+                    <td>${linesStr}</td>
+                    <td style="color:var(--text-muted)">${escHtml(f.description).substring(0, 110)}${f.description.length > 110 ? '...' : ''}</td>
+                `;
+
+                const detailsTr = document.createElement('tr');
+                detailsTr.innerHTML = `
+                    <td colspan="6" style="padding:0 1rem">
+                        <div class="finding-details" id="detail-${idx}">
+                            <dl>
+                                <dt>Attack Type & Severity</dt>
+                                <dd><span class="badge badge-${sevClass}">${f.severity}</span> — <strong>${escHtml(f.attack_type)}</strong></dd>
+
+                                <dt>Attacker Source IP</dt>
+                                <dd><code>${escHtml(f.source_ip)}</code></dd>
+
+                                <dt>Evidence (Original Log Lines)</dt>
+                                <dd>${linesStr}</dd>
+
+                                <dt>Detailed Finding Description</dt>
+                                <dd>${escHtml(f.description)}</dd>
+
+                                <dt>AI Detection Rationale</dt>
+                                <dd style="color:#fde047">${escHtml(f.reason)}</dd>
+
+                                <dt>Recommended Remediation Action</dt>
+                                <dd style="color:#86efac;font-weight:600">🛡️ ${escHtml(f.recommended_action)}</dd>
+                            </dl>
+                        </div>
+                    </td>
+                `;
+
+                tr.addEventListener('click', () => {
+                    const d = document.getElementById(`detail-${idx}`);
+                    d.classList.toggle('visible');
+                });
+
+                findingsBody.appendChild(tr);
+                findingsBody.appendChild(detailsTr);
+            });
+        }
+
+        function escHtml(str) {
+            if (!str) return '';
+            const d = document.createElement('div');
+            d.textContent = str;
+            return d.innerHTML;
+        }
+
+        downloadBtn.addEventListener('click', () => {
+            if (!reportData) return;
+            const blob = new Blob([JSON.stringify(reportData, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `cultive8-security-report-${reportData.job_id}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+        });
+
+        resetBtn.addEventListener('click', () => {
+            currentJobId = null;
+            selectedFile = null;
+            reportData = null;
+            lastLogCount = 0;
+            fileInput.value = '';
+            uploadZone.classList.remove('has-file');
+            fileInfo.style.display = 'none';
+            analyzeBtn.disabled = true;
+            resetBtn.style.display = 'none';
+            progressSection.classList.remove('visible', 'analyzing');
+            reportSection.classList.remove('visible');
+            systemCard.style.display = 'none';
+            logConsole.innerHTML = '';
+        });
+
+        // --- Model Health Check on Load ---
+        (async () => {
+            try {
+                const resp = await fetch('/api/health');
+                const data = await resp.json();
+                if (data.ollama?.ollama_running) {
+                    ollamaStatusBadge.textContent = '● Ollama Online';
+                    ollamaStatusBadge.style.color = 'var(--success)';
+                } else {
+                    ollamaStatusBadge.textContent = '○ Ollama Offline';
+                    ollamaStatusBadge.style.color = 'var(--critical)';
+                    ollamaStatusBadge.style.background = 'rgba(239,68,68,0.15)';
+                }
+            } catch (e) { }
+        })();
+    })();
+    </script>
+</body>
+</html>
